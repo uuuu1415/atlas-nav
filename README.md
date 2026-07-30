@@ -59,7 +59,7 @@ npm run dev
 
 ### 一键部署
 
-下面的命令会安装 Node.js 24、询问安装位置、服务端口、后台管理员用户名和密码，创建专用系统用户，使用 Git sparse checkout 只检出运行所需文件，安装依赖并配置 systemd。`docs/`、`test/`、截图和开发文档不会下载到服务器工作目录。执行过程中会隐藏管理员密码输入；已有 `.env`、`data/` 和 `storage/` 不会被覆盖。
+下面的命令会安装 Node.js 24、询问安装位置、服务端口、后台管理员用户名和密码，创建专用系统用户，使用 Git sparse checkout 只检出运行所需文件以及 `README.md`、`LICENSE`，安装依赖并配置 systemd。`docs/`、`test/`、截图和其他开发文档不会下载到服务器工作目录。执行过程中会隐藏管理员密码输入；已有 `.env`、`data/` 和 `storage/` 不会被覆盖。
 
 交互式默认值：
 

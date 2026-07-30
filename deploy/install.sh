@@ -77,6 +77,8 @@ git -C "${APP_DIR}" sparse-checkout set --no-cone \
   /package.json \
   /package-lock.json \
   /.env.example \
+  /README.md \
+  /LICENSE \
   /lib/ \
   /public/ \
   /deploy/
