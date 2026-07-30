@@ -16,16 +16,25 @@ function updateFields() {
 
 provider.addEventListener('change', updateFields);
 updateFields();
-form.addEventListener('submit', async event => {
+form.addEventListener('submit', async (event) => {
   event.preventDefault();
   errorNote.hidden = true;
   const values = Object.fromEntries(new FormData(form));
-  const payload = { ...values, database: values.database || values.mongoDatabase, adminUsername: values.adminUsername, adminPassword: values.adminPassword };
+  const payload = {
+    ...values,
+    database: values.database || values.mongoDatabase,
+    adminUsername: values.adminUsername,
+    adminPassword: values.adminPassword,
+  };
   const button = form.querySelector('button[type=submit]');
   button.disabled = true;
   button.textContent = '正在连接数据库…';
   try {
-    const response = await fetch('/api/setup/configure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const response = await fetch('/api/setup/configure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || '数据库配置失败。');
     window.location.href = '/';

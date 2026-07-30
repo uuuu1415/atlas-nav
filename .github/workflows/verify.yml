@@ -13,6 +13,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      - run: npm run format:check
       - run: node --check server.js
       - run: node --check public/admin.js
       - run: node --check public/setup.js

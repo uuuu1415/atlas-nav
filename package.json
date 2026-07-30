@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/admin.js && node --check public/setup.js && node --check public/js/shared.js && node --check public/js/home.js",
+    "check": "npm run format:check && node --check server.js && node --check public/admin.js && node --check public/setup.js && node --check public/js/shared.js && node --check public/js/home.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "node --test"
   },
   "dependencies": {
@@ -18,5 +20,8 @@
     "multer": "^2.0.2",
     "mysql2": "^3.14.1",
     "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
   }
 }
