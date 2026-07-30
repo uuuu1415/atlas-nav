@@ -35,7 +35,8 @@ try {
 }
 const root = process.cwd();
 const port = Number(process.env.PORT || 3000);
-const webUpdatesEnabled = process.env.ATLAS_ALLOW_WEB_UPDATE === '1';
+// Web updates are available for Git deployments unless explicitly disabled.
+const webUpdatesEnabled = process.env.ATLAS_ALLOW_WEB_UPDATE !== '0';
 if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
 const storageDir = path.resolve(root, process.env.STORAGE_PATH || './storage');
 fs.mkdirSync(storageDir, { recursive: true });

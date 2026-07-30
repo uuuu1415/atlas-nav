@@ -24,6 +24,7 @@ test(
         ADMIN_USERNAME: 'test-admin',
         ADMIN_PASSWORD: password,
         SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
+        ATLAS_ALLOW_WEB_UPDATE: '0',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -211,6 +212,7 @@ test(
         ADMIN_USERNAME: 'production-admin',
         ADMIN_PASSWORD: password,
         SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
+        ATLAS_ALLOW_WEB_UPDATE: '0',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -239,6 +241,11 @@ test(
         ).status,
         200,
       );
+      const updateStatus = await fetch(`${base}/api/admin/update-status`, {
+        headers: { Cookie: cookie.split(';')[0] },
+      });
+      assert.equal(updateStatus.status, 200);
+      assert.deepEqual(await updateStatus.json(), { enabled: false, available: false });
     } finally {
       server.kill();
       await new Promise((resolve) => server.once('exit', resolve)).catch(() => {});
