@@ -10,13 +10,6 @@ Atlas Nav 将常用服务、个人书签和搜索入口集中在一个精致首�
 
 ## 预览
 
-请将首页和后台截图保存为以下文件；它们会直接显示在 GitHub 项目首页：
-
-```text
-docs/screenshots/home.png
-docs/screenshots/admin.png
-```
-
 | 首页 | 后台 |
 | --- | --- |
 | ![Atlas Nav 首页](docs/screenshots/home.png) | ![Atlas Nav 后台](docs/screenshots/admin.png) |
