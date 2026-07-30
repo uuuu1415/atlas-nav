@@ -4,6 +4,8 @@
 
 Atlas Nav 将常用服务、个人书签和搜索入口集中在一个精致首页，并提供单管理员后台管理分类、链接、搜索引擎、页面内容和视觉令牌。默认以 SQLite 运行，不需要 Docker，适合本地使用，也可在个人服务器上以 Node.js 服务部署。
 
+首次启动时会显示与首页风格一致的数据库配置向导，可选择 SQLite、PostgreSQL、MySQL 或 MongoDB，并填写数据库地址、端口、数据库名、账号和密码。SQLite 默认路径为 `./data/atlas-nav.db`；关系数据库默认端口为 PostgreSQL `5432`、MySQL `3306`。首次初始化还需要从服务器日志复制一次性 `Atlas Nav setup token`，防止未授权用户抢先接管新实例。配置完成后，连接凭据保存在被 Git 忽略的 `.atlas-nav.config.json`，管理员密码只以哈希形式保存，初始化页面不再显示。
+
 ## 制作方式
 
 本项目主要通过 Vibe Coding 完成：由人类提出产品目标、审查方案、运行验证并维护发布结果，AI 辅助完成代码实现、测试和文档整理。当前主要使用 `GPT-5.6-sol` 与 `GPT-5.6-terra` 协作完成。项目欢迎使用 Claude 或其他 AI 工具参与后续贡献；所有贡献者仍需对提交内容负责，并完成必要的安全审查、测试和许可证确认。
@@ -66,6 +68,8 @@ npm run dev
 - 后台管理员密码：`123456`
 
 密码 `123456` 仅作为首次安装默认值，安全性很低。首次登录后台后，请立即使用“维护工具”修改为至少 10 个字符的强密码。已有 `.env` 时，脚本会保留原配置，不会用这些默认值覆盖现有账号。
+
+首次启动向导还会要求初始化令牌。令牌只显示在服务端启动日志中，不会显示在网页中；请在同一台服务器上查看 `journalctl -u atlas-nav` 或启动终端后粘贴。不要把令牌发给其他人。
 
 官方链接（推荐）：
 
@@ -197,7 +201,7 @@ sudo systemctl restart atlas-nav
 
 ```bash
 sudo systemctl stop atlas-nav
-tar -czf atlas-nav-backup-$(date +%F).tar.gz /opt/atlas-nav/data /opt/atlas-nav/storage /opt/atlas-nav/.env
+tar -czf atlas-nav-backup-$(date +%F).tar.gz /opt/atlas-nav/data /opt/atlas-nav/storage /opt/atlas-nav/.env /opt/atlas-nav/.atlas-nav.config.json
 sudo systemctl start atlas-nav
 ```
 
@@ -205,7 +209,7 @@ sudo systemctl start atlas-nav
 
 ## 数据库支持
 
-当前完整实现为 SQLite。项目的数据访问边界为 PostgreSQL、MySQL 与 MongoDB 预留了扩展位置，但它们尚未实现为可直接切换的 provider；请不要仅修改 `DB_PROVIDER` 就在生产中使用。欢迎贡献数据库适配器。
+SQLite、PostgreSQL、MySQL 和 MongoDB 均有数据访问适配器。首次启动向导会验证连接并初始化对应 schema；MongoDB 使用 `MONGODB_URI` 和 `MONGODB_DATABASE`，关系数据库使用 `DATABASE_URL`。生产环境仍应优先使用专用数据库账号、最小权限和 TLS 连接。
 
 ## 开源许可
 

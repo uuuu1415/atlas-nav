@@ -4,7 +4,9 @@
 
 公共首页已经从单个压缩脚本拆分为 ES Module：`public/js/shared.js` 负责 DOM、转义与语言词条，`public/js/home.js` 负责首页状态、搜索、布局、最近访问和页面渲染。这样首页交互不再依赖一个难以维护的单行文件。
 
-服务端保留单一入口 `server.js`，但安全校验、请求包装、设计令牌、数据校验和路由分别以命名函数组织。SQLite 数据读写仍集中于 `lib/sqlite.js`，避免 SQL 逻辑散落到路由中。
+服务端保留单一入口 `server.js`，但安全校验、请求包装、设计令牌、数据校验和路由分别以命名函数组织。数据访问通过统一 repository contract 抽象，分别由 `lib/sqlite.js`、`lib/postgresql.js`、`lib/mysql.js` 和 `lib/mongodb.js` 实现；路由不直接依赖具体数据库。
+
+首次启动由 `lib/setup-config.js` 判断数据库是否已配置。未配置时服务只开放初始化页面和必要静态资源；向导验证连接、写入私有 `.atlas-nav.config.json` 并初始化 schema。该文件包含数据库凭据，必须保持在 `.gitignore` 中。向导完成后不提供重复初始化入口，修改数据库连接应通过服务器私有配置和受控维护流程完成。
 
 ## 后台设计系统
 

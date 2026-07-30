@@ -8,9 +8,14 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
-import { repo } from './lib/repositories.js';
+import { hasDatabaseConfiguration, applySetupConfig, readSetupConfig, validateSetupInput, writeSetupConfig } from './lib/setup-config.js';
 
 const app = express();
+let repo = null;
+let databaseReady = false;
+let setupState = 'unconfigured';
+let setupToken = process.env.ATLAS_SETUP_TOKEN || crypto.randomBytes(24).toString('hex');
+try { databaseReady = hasDatabaseConfiguration(); if (databaseReady) applySetupConfig(readSetupConfig()); setupState = databaseReady ? 'ready' : 'unconfigured'; } catch (error) { console.error(error.message); process.exit(1); }
 const root = process.cwd();
 const port = Number(process.env.PORT || 3000);
 const storageDir = path.resolve(root, process.env.STORAGE_PATH || './storage');
@@ -29,10 +34,52 @@ app.use(express.json({ limit: '200kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use('/storage', express.static(storageDir, { maxAge: '7d' }));
+const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+
+app.use((req, res, next) => {
+  if (databaseReady || req.path === '/setup' || req.path.startsWith('/api/setup') || ['/styles.css', '/icon.svg', '/setup.js', '/favicon.ico'].includes(req.path)) return next();
+  if (req.path.startsWith('/api/')) return res.status(503).json({ error: '请先完成数据库初始化。' });
+  return res.redirect('/setup');
+});
 app.use(express.static(path.join(root, 'public'), { extensions: ['html'] }));
 
-const secret = process.env.SESSION_SECRET || 'replace-this-in-env';
-if (process.env.NODE_ENV === 'production' && ['replace-this-in-env', 'replace-with-a-long-random-secret'].includes(secret)) throw new Error('SESSION_SECRET must be set to a strong random value in production.');
+app.get('/api/setup/status', (_, res) => res.json({ configured: databaseReady }));
+app.post('/api/setup/configure', asyncRoute(async (req, res) => {
+  if (databaseReady || setupState !== 'unconfigured') return res.status(409).json({ error: '数据库正在配置或已经完成初始化。' });
+  if (req.body.setupToken !== setupToken) return res.status(403).json({ error: '初始化令牌无效，请查看服务器启动日志。' });
+  setupState = 'configuring';
+  let config;
+  try { config = validateSetupInput(req.body); } catch (error) { setupState = 'unconfigured'; return res.status(400).json({ error: error.message }); }
+  const adminUsername = cleanText(req.body.adminUsername, 60) || 'admin';
+  const adminPassword = String(req.body.adminPassword || '123456');
+  if (adminPassword.length < 6) { setupState = 'unconfigured'; return res.status(400).json({ error: '管理员密码至少需要 6 个字符。' }); }
+  config.ADMIN_USERNAME = adminUsername;
+  config.ADMIN_PASSWORD = adminPassword;
+  config.ADMIN_PASSWORD_HASH = await bcrypt.hash(adminPassword, 12);
+  config.SESSION_SECRET = crypto.randomBytes(48).toString('base64url');
+  try {
+    applySetupConfig(config);
+    secret = config.SESSION_SECRET;
+    repo = await import('./lib/repositories.js').then(module => module.loadRepository());
+    await bootstrap();
+    const persistedConfig = { ...config }; delete persistedConfig.ADMIN_PASSWORD;
+    writeSetupConfig(persistedConfig);
+    delete process.env.ADMIN_PASSWORD;
+    databaseReady = true; setupState = 'ready'; setupToken = null;
+    res.json({ ok: true, restartRequired: false });
+  } catch (error) {
+    try { await repo?.close?.(); } catch {}
+    repo = null;
+    setupState = 'unconfigured';
+    console.error('Database setup failed:', error.message);
+    res.status(400).json({ error: '数据库连接失败，请检查配置后重试。' });
+  }
+}));
+
+app.get('/setup', (_, res) => res.sendFile(path.join(root, 'public', 'setup.html')));
+
+let secret = process.env.SESSION_SECRET || 'replace-this-in-env';
+if (databaseReady && process.env.NODE_ENV === 'production' && ['replace-this-in-env', 'replace-with-a-long-random-secret'].includes(secret)) throw new Error('SESSION_SECRET must be set to a strong random value in production.');
 function sign(value) { return crypto.createHmac('sha256', secret).update(value).digest('base64url'); }
 function makeSession(username, days = 14) { const exp = Date.now() + 1000 * 60 * 60 * 24 * days; const raw = `${username}.${exp}`; return `${raw}.${sign(raw)}`; }
 function session(req) {
@@ -44,7 +91,6 @@ function session(req) {
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) ? username : null;
 }
 function requireAdmin(req, res, next) { const username = session(req); if (!username) return res.status(401).json({ error: '请先登录后台。' }); req.admin = username; next(); }
-const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 function cleanText(value, max = 180) { return String(value ?? '').trim().slice(0, max); }
 function validURL(value) { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? u.href : null; } catch { return null; } }
 function color(value) { return /^#[0-9a-fA-F]{6}$/.test(value || '') ? value : '#5271ff'; }
@@ -112,32 +158,28 @@ function metadataFromHTML(html, url) {
 async function bootstrap() {
   const username = process.env.ADMIN_USERNAME || 'admin';
   const initialPassword = process.env.ADMIN_PASSWORD || 'change-this-before-running';
-  if (process.env.NODE_ENV === 'production' && initialPassword === 'change-this-before-running') throw new Error('ADMIN_PASSWORD must be changed before production startup.');
-  if (!repo.findAdmin(username)) repo.createAdmin(username, await bcrypt.hash(initialPassword, 12));
-  if (!repo.getSettings().site_title) repo.setSetting('site_title', 'Atlas / 个人工作台');
-  if (!repo.getSettings().page_title) repo.setSetting('page_title', '导航页');
-  if (!repo.getSettings().brand_icon) repo.setSetting('brand_icon', '•');
-  if (!repo.getSettings().layout) repo.setSetting('layout', 'standard');
-  if (!repo.getSettings().site_logo) repo.setSetting('site_logo', '');
-  if (!repo.getSettings().language) repo.setSetting('language', 'zh-CN');
-  if (!repo.getSettings().session_days) repo.setSetting('session_days', '14');
-  if (!repo.getSettings().default_search_engine) repo.setSetting('default_search_engine', 'local');
-  if (!repo.getSettings().footer_text) repo.setSetting('footer_text', '你的数字坐标');
-  if (!repo.getSettings().design_tokens) repo.setSetting('design_tokens', JSON.stringify(designData()));
-  if (!repo.searchEngines(true).length) {
-    repo.createSearchEngine({ name: 'Bing', query_url: 'https://www.bing.com/search?q={query}', icon: 'b', color: '#1683d8', visible: true });
-    repo.createSearchEngine({ name: 'Google', query_url: 'https://www.google.com/search?q={query}', icon: 'G', color: '#4285f4', visible: true });
-    repo.createSearchEngine({ name: '百度', query_url: 'https://www.baidu.com/s?wd={query}', icon: '百', color: '#2932e1', visible: true });
+  if (process.env.NODE_ENV === 'production' && initialPassword === 'change-this-before-running' && !process.env.ADMIN_PASSWORD_HASH) throw new Error('ADMIN_PASSWORD must be changed before production startup.');
+  const existingAdmin = await repo.findAdmin(username);
+  if (!existingAdmin) await repo.createAdmin(username, process.env.ADMIN_PASSWORD_HASH || await bcrypt.hash(initialPassword, 12));
+  else if (process.env.ADMIN_PASSWORD_HASH) await repo.updateAdminPassword(username, process.env.ADMIN_PASSWORD_HASH);
+  const settings = await repo.getSettings();
+  const defaults = { site_title: 'Atlas / 个人工作台', page_title: '导航页', brand_icon: '•', layout: 'standard', site_logo: '', language: 'zh-CN', session_days: '14', default_search_engine: 'local', footer_text: '你的数字坐标', design_tokens: JSON.stringify(designData()) };
+  for (const [key, value] of Object.entries(defaults)) if (!settings[key]) await repo.setSetting(key, value);
+  if (!(await repo.searchEngines(true)).length) {
+    await repo.createSearchEngine({ name: 'Bing', query_url: 'https://www.bing.com/search?q={query}', icon: 'b', color: '#1683d8', visible: true });
+    await repo.createSearchEngine({ name: 'Google', query_url: 'https://www.google.com/search?q={query}', icon: 'G', color: '#4285f4', visible: true });
+    await repo.createSearchEngine({ name: '百度', query_url: 'https://www.baidu.com/s?wd={query}', icon: '百', color: '#2932e1', visible: true });
   }
-  if (repo.categories(true).length) return;
+  if ((await repo.categories(true)).length) return;
   const categories = [
     ['工作流', '每天都会打开的协作与组织工具', '↗', '#5a69e8'],
     ['创造力', '从灵感到成品的创作空间', '✦', '#df6d93'],
     ['开发栈', '构建、发布与记录工作的地方', '⌘', '#0e8c83'],
     ['知识库', '阅读、保存和长期思考', '◫', '#c98435']
-  ].map(([name, description, icon, color]) => { repo.createCategory({ name, description, icon, color, visible: true }); return repo.categories(true).at(-1); });
-  const [work, creative, dev, knowledge] = repo.categories(true);
-  [
+  ];
+  for (const [name, description, icon, color] of categories) await repo.createCategory({ name, description, icon, color, visible: true });
+  const [work, creative, dev, knowledge] = await repo.categories(true);
+  for (const [category_id, name, url, description, color] of [
     [work.id, 'Gmail', 'https://mail.google.com/', '收件箱与日程邀请', '#e25347'],
     [work.id, 'Notion', 'https://www.notion.so/', '项目、笔记与资料', '#161616'],
     [creative.id, 'Claude', 'https://claude.ai/', '思考、写作与研究', '#d7794a'],
@@ -146,44 +188,44 @@ async function bootstrap() {
     [dev.id, 'Vercel', 'https://vercel.com/', '前端部署与预览', '#141414'],
     [knowledge.id, 'Readwise', 'https://readwise.io/', '高亮、回顾与阅读', '#1d836f'],
     [knowledge.id, 'YouTube', 'https://www.youtube.com/', '教程与深度内容', '#e44741']
-  ].forEach(([category_id, name, url, description, color]) => repo.createLink({ category_id, name, url, description, color, icon_type: 'initial', icon_value: '', pinned: name === 'Claude' || name === 'GitHub', visible: true }));
+  ]) await repo.createLink({ category_id, name, url, description, color, icon_type: 'initial', icon_value: '', pinned: name === 'Claude' || name === 'GitHub', visible: true });
 }
 
-app.get('/api/nav', (_, res) => { const settings = repo.getSettings(); settings.design = designData(settings.design_tokens); res.set('Cache-Control', 'private, max-age=30'); res.json({ settings, searchEngines: repo.searchEngines(), categories: repo.categories().map(c => ({ ...c, links: repo.links(c.id) })), pinned: repo.links().filter(l => l.pinned) }); });
+app.get('/api/nav', asyncRoute(async (_, res) => { const settings = await repo.getSettings(); settings.design = designData(settings.design_tokens); const categories = await repo.categories(); res.set('Cache-Control', 'private, max-age=30'); res.json({ settings, searchEngines: await repo.searchEngines(), categories: await Promise.all(categories.map(async c => ({ ...c, links: await repo.links(c.id) }))), pinned: (await repo.links()).filter(l => l.pinned) }); }));
 app.get('/api/admin/session', (req, res) => res.json({ authenticated: Boolean(session(req)), username: session(req) }));
-app.post('/api/admin/login', async (req, res) => { const username = cleanText(req.body.username, 60); if (repo.recentLoginAttempts(username, Date.now() - 15 * 60 * 1000) >= 5) return res.status(429).json({ error: '尝试次数过多，请在 15 分钟后再试。' }); const admin = repo.findAdmin(username); if (!admin || !(await bcrypt.compare(String(req.body.password || ''), admin.password_hash))) { repo.recordLoginAttempt(username); return res.status(401).json({ error: '用户名或密码不正确。' }); } repo.clearLoginAttempts(username); const sessionDays = Math.min(Math.max(Number(repo.getSettings().session_days || 14), 1), 90); res.cookie('atlas_session', makeSession(username, sessionDays), { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 1000 * 60 * 60 * 24 * sessionDays }); res.json({ ok: true }); });
+app.post('/api/admin/login', asyncRoute(async (req, res) => { const username = cleanText(req.body.username, 60); if (await repo.recentLoginAttempts(username, Date.now() - 15 * 60 * 1000) >= 5) return res.status(429).json({ error: '尝试次数过多，请在 15 分钟后再试。' }); const admin = await repo.findAdmin(username); if (!admin || !(await bcrypt.compare(String(req.body.password || ''), admin.password_hash))) { await repo.recordLoginAttempt(username); return res.status(401).json({ error: '用户名或密码不正确。' }); } await repo.clearLoginAttempts(username); const sessionDays = Math.min(Math.max(Number((await repo.getSettings()).session_days || 14), 1), 90); res.cookie('atlas_session', makeSession(username, sessionDays), { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 1000 * 60 * 60 * 24 * sessionDays }); res.json({ ok: true }); }));
 app.post('/api/admin/logout', (_, res) => { res.clearCookie('atlas_session'); res.json({ ok: true }); });
-app.get('/api/admin/data', requireAdmin, (_, res) => res.json({ settings: repo.getSettings(), categories: repo.categories(true), links: repo.links(null, true), searchEngines: repo.searchEngines(true) }));
-app.put('/api/admin/settings', requireAdmin, (req, res) => {
+app.get('/api/admin/data', requireAdmin, asyncRoute(async (_, res) => res.json({ settings: await repo.getSettings(), categories: await repo.categories(true), links: await repo.links(null, true), searchEngines: await repo.searchEngines(true) })));
+app.put('/api/admin/settings', requireAdmin, asyncRoute(async (req, res) => {
   const layout = ['standard', 'compact', 'columns'].includes(req.body.layout) ? req.body.layout : 'standard';
-  repo.setSetting('site_title', cleanText(req.body.site_title, 80) || 'Atlas / 个人工作台');
-  repo.setSetting('page_title', cleanText(req.body.page_title, 40) || '导航页');
-  repo.setSetting('brand_icon', cleanText(req.body.brand_icon, 8) || '•');
-  repo.setSetting('layout', layout);
+  await repo.setSetting('site_title', cleanText(req.body.site_title, 80) || 'Atlas / 个人工作台');
+  await repo.setSetting('page_title', cleanText(req.body.page_title, 40) || '导航页');
+  await repo.setSetting('brand_icon', cleanText(req.body.brand_icon, 8) || '•');
+  await repo.setSetting('layout', layout);
   const requestedLogo = cleanText(req.body.site_logo, 1000);
-  repo.setSetting('site_logo', requestedLogo ? (validURL(requestedLogo) || '') : '');
-  repo.setSetting('language', ['zh-CN', 'en'].includes(req.body.language) ? req.body.language : 'zh-CN');
-  repo.setSetting('session_days', String(Math.min(Math.max(Number(req.body.session_days) || 14, 1), 90)));
-  repo.setSetting('default_search_engine', cleanText(req.body.default_search_engine, 24) || 'local');
-  repo.setSetting('footer_text', cleanText(req.body.footer_text, 120) || '你的数字坐标');
-  repo.setSetting('design_tokens', JSON.stringify(designData(req.body.design_tokens)));
+  await repo.setSetting('site_logo', requestedLogo ? (validURL(requestedLogo) || '') : '');
+  await repo.setSetting('language', ['zh-CN', 'en'].includes(req.body.language) ? req.body.language : 'zh-CN');
+  await repo.setSetting('session_days', String(Math.min(Math.max(Number(req.body.session_days) || 14, 1), 90)));
+  await repo.setSetting('default_search_engine', cleanText(req.body.default_search_engine, 24) || 'local');
+  await repo.setSetting('footer_text', cleanText(req.body.footer_text, 120) || '你的数字坐标');
+  await repo.setSetting('design_tokens', JSON.stringify(designData(req.body.design_tokens)));
   res.json({ ok: true });
-});
-app.post('/api/admin/categories', requireAdmin, (req, res) => { const data = categoryData(req.body); if (!data.name) return res.status(400).json({ error: '请填写分类名称。' }); const r = repo.createCategory(data); res.json({ ok: true, id: r.lastInsertRowid }); });
-app.put('/api/admin/categories/:id', requireAdmin, (req, res) => { const data = categoryData(req.body); if (!data.name) return res.status(400).json({ error: '请填写分类名称。' }); repo.updateCategory(Number(req.params.id), data); res.json({ ok: true }); });
-app.delete('/api/admin/categories/:id', requireAdmin, (req, res) => { repo.deleteCategory(Number(req.params.id)); res.json({ ok: true }); });
-app.post('/api/admin/categories/reorder', requireAdmin, (req, res) => { const ids = reorderIds(req.body); if (!ids) return res.status(400).json({ error: '排序数据无效。' }); repo.reorderCategories(ids); res.json({ ok: true }); });
-app.post('/api/admin/links', requireAdmin, (req, res) => { const data = linkData(req.body); if (!data?.name) return res.status(400).json({ error: '请填写名称、有效链接并选择分类。' }); const r = repo.createLink(data); res.json({ ok: true, id: r.lastInsertRowid }); });
-app.put('/api/admin/links/:id', requireAdmin, (req, res) => { const data = linkData(req.body); if (!data?.name) return res.status(400).json({ error: '请填写名称、有效链接并选择分类。' }); repo.updateLink(Number(req.params.id), data); res.json({ ok: true }); });
-app.delete('/api/admin/links/:id', requireAdmin, (req, res) => { repo.deleteLink(Number(req.params.id)); res.json({ ok: true }); });
-app.post('/api/admin/links/reorder', requireAdmin, (req, res) => { const ids = reorderIds(req.body); if (!ids) return res.status(400).json({ error: '排序数据无效。' }); repo.reorderLinks(ids); res.json({ ok: true }); });
-app.post('/api/admin/search-engines', requireAdmin, (req, res) => { const data = searchEngineData(req.body); if (!data) return res.status(400).json({ error: '请填写名称和包含 {query} 的有效搜索 URL。' }); const r = repo.createSearchEngine(data); res.json({ ok: true, id: r.lastInsertRowid }); });
-app.put('/api/admin/search-engines/:id', requireAdmin, (req, res) => { const data = searchEngineData(req.body); if (!data) return res.status(400).json({ error: '请填写名称和包含 {query} 的有效搜索 URL。' }); repo.updateSearchEngine(Number(req.params.id), data); res.json({ ok: true }); });
-app.delete('/api/admin/search-engines/:id', requireAdmin, (req, res) => { repo.deleteSearchEngine(Number(req.params.id)); res.json({ ok: true }); });
-app.post('/api/admin/search-engines/reorder', requireAdmin, (req, res) => { const ids = reorderIds(req.body); if (!ids) return res.status(400).json({ error: '排序数据无效。' }); repo.reorderSearchEngines(ids); res.json({ ok: true }); });
+}));
+app.post('/api/admin/categories', requireAdmin, asyncRoute(async (req, res) => { const data = categoryData(req.body); if (!data.name) return res.status(400).json({ error: '请填写分类名称。' }); const r = await repo.createCategory(data); res.json({ ok: true, id: r.lastInsertRowid }); }));
+app.put('/api/admin/categories/:id', requireAdmin, asyncRoute(async (req, res) => { const data = categoryData(req.body); if (!data.name) return res.status(400).json({ error: '请填写分类名称。' }); await repo.updateCategory(Number(req.params.id), data); res.json({ ok: true }); }));
+app.delete('/api/admin/categories/:id', requireAdmin, asyncRoute(async (req, res) => { await repo.deleteCategory(Number(req.params.id)); res.json({ ok: true }); }));
+app.post('/api/admin/categories/reorder', requireAdmin, asyncRoute(async (req, res) => { const ids = reorderIds(req.body); if (!ids) return res.status(400).json({ error: '排序数据无效。' }); await repo.reorderCategories(ids); res.json({ ok: true }); }));
+app.post('/api/admin/links', requireAdmin, asyncRoute(async (req, res) => { const data = linkData(req.body); if (!data?.name) return res.status(400).json({ error: '请填写名称、有效链接并选择分类。' }); const r = await repo.createLink(data); res.json({ ok: true, id: r.lastInsertRowid }); }));
+app.put('/api/admin/links/:id', requireAdmin, asyncRoute(async (req, res) => { const data = linkData(req.body); if (!data?.name) return res.status(400).json({ error: '请填写名称、有效链接并选择分类。' }); await repo.updateLink(Number(req.params.id), data); res.json({ ok: true }); }));
+app.delete('/api/admin/links/:id', requireAdmin, asyncRoute(async (req, res) => { await repo.deleteLink(Number(req.params.id)); res.json({ ok: true }); }));
+app.post('/api/admin/links/reorder', requireAdmin, asyncRoute(async (req, res) => { const ids = reorderIds(req.body); if (!ids) return res.status(400).json({ error: '排序数据无效。' }); await repo.reorderLinks(ids); res.json({ ok: true }); }));
+app.post('/api/admin/search-engines', requireAdmin, asyncRoute(async (req, res) => { const data = searchEngineData(req.body); if (!data) return res.status(400).json({ error: '请填写名称和包含 {query} 的有效搜索 URL。' }); const r = await repo.createSearchEngine(data); res.json({ ok: true, id: r.lastInsertRowid }); }));
+app.put('/api/admin/search-engines/:id', requireAdmin, asyncRoute(async (req, res) => { const data = searchEngineData(req.body); if (!data) return res.status(400).json({ error: '请填写名称和包含 {query} 的有效搜索 URL。' }); await repo.updateSearchEngine(Number(req.params.id), data); res.json({ ok: true }); }));
+app.delete('/api/admin/search-engines/:id', requireAdmin, asyncRoute(async (req, res) => { await repo.deleteSearchEngine(Number(req.params.id)); res.json({ ok: true }); }));
+app.post('/api/admin/search-engines/reorder', requireAdmin, asyncRoute(async (req, res) => { const ids = reorderIds(req.body); if (!ids) return res.status(400).json({ error: '排序数据无效。' }); await repo.reorderSearchEngines(ids); res.json({ ok: true }); }));
 app.post('/api/admin/upload', requireAdmin, upload.single('icon'), (req, res) => { if (!req.file) return res.status(400).json({ error: '请选择 PNG、JPG、GIF 或 WebP 图片，且不超过 2 MB。' }); res.json({ url: `/storage/${req.file.filename}` }); });
-app.get('/api/admin/export', requireAdmin, (_, res) => { res.setHeader('Content-Disposition', `attachment; filename="atlas-nav-backup-${new Date().toISOString().slice(0, 10)}.json"`); res.json({ version: 1, exportedAt: new Date().toISOString(), ...repo.exportData() }); });
-app.post('/api/admin/import', requireAdmin, (req, res) => {
+app.get('/api/admin/export', requireAdmin, asyncRoute(async (_, res) => { res.setHeader('Content-Disposition', `attachment; filename="atlas-nav-backup-${new Date().toISOString().slice(0, 10)}.json"`); res.json({ version: 1, exportedAt: new Date().toISOString(), ...await repo.exportData() }); }));
+app.post('/api/admin/import', requireAdmin, asyncRoute(async (req, res) => {
   const payload = req.body;
   if (!payload || !payload.settings || typeof payload.settings !== 'object' || !Array.isArray(payload.categories) || !Array.isArray(payload.links) || !Array.isArray(payload.searchEngines)) return res.status(400).json({ error: '备份文件格式无效或缺少必要字段。' });
   const categoryIds = new Set(payload.categories.map(item => positiveId(item.id)));
@@ -203,18 +245,22 @@ app.post('/api/admin/import', requireAdmin, (req, res) => {
     design_tokens: JSON.stringify(designData(payload.settings.design_tokens))
   };
   // Import only normalized values so valid-looking extra fields cannot bypass route validation.
-  repo.importData({
+  await repo.importData({
     settings: importedSettings,
     categories: payload.categories.map(item => ({ ...item, ...categoryData(item) })),
     links: payload.links.map(item => ({ ...item, ...linkData(item) })),
     searchEngines: payload.searchEngines.map(item => ({ ...item, ...searchEngineData(item) }))
   });
   res.json({ ok: true });
-});
-app.post('/api/admin/password', requireAdmin, async (req, res) => { const current = String(req.body.current_password || ''); const next = String(req.body.new_password || ''); const admin = repo.findAdmin(req.admin); if (!admin || !(await bcrypt.compare(current, admin.password_hash))) return res.status(400).json({ error: '当前密码不正确。' }); if (next.length < 10) return res.status(400).json({ error: '新密码至少需要 10 个字符。' }); repo.updateAdminPassword(req.admin, await bcrypt.hash(next, 12)); res.json({ ok: true }); });
+}));
+app.post('/api/admin/password', requireAdmin, asyncRoute(async (req, res) => { const current = String(req.body.current_password || ''); const next = String(req.body.new_password || ''); const admin = await repo.findAdmin(req.admin); if (!admin || !(await bcrypt.compare(current, admin.password_hash))) return res.status(400).json({ error: '当前密码不正确。' }); if (next.length < 10) return res.status(400).json({ error: '新密码至少需要 10 个字符。' }); await repo.updateAdminPassword(req.admin, await bcrypt.hash(next, 12)); res.json({ ok: true }); }));
 app.post('/api/admin/metadata', requireAdmin, asyncRoute(async (req, res) => { const requestedUrl = cleanText(req.body.url, 1000); try { const response = await checkedFetch(requestedUrl, { signal: AbortSignal.timeout(7000), headers: { 'User-Agent': 'Atlas-Nav metadata preview' } }); const html = (await response.text()).slice(0, 750000); res.json(metadataFromHTML(html, response.url)); } catch { res.status(400).json({ error: 'URL 无效、不可访问或不允许访问内网地址。' }); } }));
-app.post('/api/admin/health-check', requireAdmin, asyncRoute(async (req, res) => { const links = req.body.id ? [repo.link(Number(req.body.id))].filter(Boolean) : repo.links(null, true); const results = []; for (const link of links.slice(0, 50)) { let status = 'error'; try { const response = await checkedFetch(link.url, { method: 'HEAD', signal: AbortSignal.timeout(7000), headers: { 'User-Agent': 'Atlas-Nav link checker' } }); status = response.ok ? 'ok' : `http-${response.status}`; } catch { status = 'error'; } try { repo.setLinkHealth(link.id, status); } catch { status = 'storage-error'; } results.push({ id: link.id, status }); } res.json({ ok: true, results }); }));
+app.post('/api/admin/health-check', requireAdmin, asyncRoute(async (req, res) => { const links = req.body.id ? [await repo.link(Number(req.body.id))].filter(Boolean) : await repo.links(null, true); const results = []; for (const link of links.slice(0, 50)) { let status = 'error'; try { const response = await checkedFetch(link.url, { method: 'HEAD', signal: AbortSignal.timeout(7000), headers: { 'User-Agent': 'Atlas-Nav link checker' } }); status = response.ok ? 'ok' : `http-${response.status}`; } catch { status = 'error'; } try { await repo.setLinkHealth(link.id, status); } catch { status = 'storage-error'; } results.push({ id: link.id, status }); } res.json({ ok: true, results }); }));
 app.use((err, _, res, __) => { console.error('Request failed:', err); if (err instanceof multer.MulterError) return res.status(400).json({ error: '上传失败：文件不能超过 2 MB。' }); res.status(500).json({ error: '请求处理失败，请查看启动窗口中的错误信息。' }); });
 
-await bootstrap();
+if (databaseReady) {
+  repo = await import('./lib/repositories.js').then(module => module.loadRepository());
+  await bootstrap();
+}
+if (!databaseReady) console.log(`Atlas Nav setup token: ${setupToken}`);
 app.listen(port, () => console.log(`Atlas Nav running at http://localhost:${port}`));

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#eff1f7">
+  <title>Atlas Nav 初始化</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .setup-shell{max-width:760px}.setup-step{font-size:13px;color:var(--muted)}.setup-card{max-width:620px;margin:38px auto 80px;padding:42px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius,15px);box-shadow:var(--shadow)}.setup-card .page-title{font-size:clamp(34px,5vw,52px);margin-bottom:18px}.setup-intro{color:var(--muted);line-height:1.7;margin:0 0 30px}.setup-card .field{margin:0 0 18px}.setup-card small{display:block;color:var(--muted);font-size:12px;margin-top:7px;line-height:1.5}.setup-divider{height:1px;background:var(--line);margin:28px 0}.setup-submit{width:100%;margin-top:10px}.setup-card .error-note{margin-top:18px}.provider-fields[hidden]{display:none}@media(max-width:600px){.setup-card{margin:18px 0 40px;padding:26px 20px}.setup-step{display:none}}
+  </style>
+</head>
+<body class="home setup-page">
+  <div class="grain"></div>
+  <main class="shell setup-shell">
+    <header class="masthead"><a class="brand" href="/setup">ATLAS<span>•</span></a><span class="setup-step">首次启动配置</span></header>
+    <section class="setup-card">
+      <p class="eyebrow">WELCOME TO ATLAS NAV</p>
+      <h1 class="page-title">配置你的数据坐标</h1>
+      <p class="setup-intro">仅首次启动显示。连接信息只保存到服务器私有配置文件，不会返回到浏览器或写入 Git。</p>
+      <form id="setup-form">
+        <div class="field"><label for="provider">数据库类型</label><select id="provider" name="provider"><option value="sqlite">SQLite（本地文件）</option><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option><option value="mongodb">MongoDB</option></select></div>
+        <div id="sqlite-fields" class="provider-fields"><div class="field"><label for="sqlitePath">数据库文件路径</label><input id="sqlitePath" name="sqlitePath" value="./data/atlas-nav.db"><small>相对项目目录或服务器绝对路径。</small></div></div>
+        <div id="relational-fields" class="provider-fields" hidden><div class="two-col"><div class="field"><label for="host">数据库地址</label><input id="host" name="host" value="127.0.0.1"></div><div class="field"><label for="port">端口</label><input id="port" name="port" type="number" min="1" max="65535"></div></div><div class="two-col"><div class="field"><label for="username">数据库用户名</label><input id="username" name="username" autocomplete="username"></div><div class="field"><label for="password">数据库密码</label><input id="password" name="password" type="password" autocomplete="new-password"></div></div><div class="field"><label for="database">数据库名</label><input id="database" name="database"></div></div>
+        <div id="mongodb-fields" class="provider-fields" hidden><div class="two-col"><div class="field"><label for="mongoHost">数据库地址</label><input id="mongoHost" name="mongoHost" value="127.0.0.1"></div><div class="field"><label for="mongoPort">端口</label><input id="mongoPort" name="mongoPort" type="number" min="1" max="65535" value="27017"></div></div><div class="two-col"><div class="field"><label for="mongoUsername">数据库用户名</label><input id="mongoUsername" name="mongoUsername" autocomplete="username"></div><div class="field"><label for="mongoPassword">数据库密码</label><input id="mongoPassword" name="mongoPassword" type="password" autocomplete="new-password"></div></div><div class="field"><label for="mongoDatabase">数据库名</label><input id="mongoDatabase" name="mongoDatabase"></div></div>
+        <div class="setup-divider"></div>
+        <div class="field"><label for="adminUsername">后台管理员用户名</label><input id="adminUsername" name="adminUsername" value="admin" autocomplete="username"></div>
+        <div class="field"><label for="adminPassword">后台管理员密码</label><input id="adminPassword" name="adminPassword" type="password" value="123456" autocomplete="new-password"><small>默认值为 123456，仅适合首次初始化。登录后请立即修改。</small></div>
+        <div class="field"><label for="setupToken">初始化令牌</label><input id="setupToken" name="setupToken" autocomplete="off" required><small>请从服务器启动日志中复制 `Atlas Nav setup token` 后粘贴到这里。</small></div>
+        <button class="button setup-submit" type="submit">连接并完成初始化</button>
+        <p id="setup-error" class="error-note" hidden></p>
+      </form>
+    </section>
+  </main>
+  <script src="/setup.js"></script>
+</body>
+</html>
