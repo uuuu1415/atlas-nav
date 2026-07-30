@@ -22,6 +22,12 @@ else
   TTY=/dev/tty
 fi
 
+if [[ -z "${ATLAS_APP_DIR+x}" ]]; then
+  read -r -p "安装位置 [${APP_DIR}]: " requested_app_dir <"${TTY}"
+  APP_DIR="${requested_app_dir:-${APP_DIR}}"
+fi
+[[ "${APP_DIR}" == /* ]] || fail '安装位置必须是绝对路径，例如 /opt/atlas-nav。'
+
 export DEBIAN_FRONTEND=noninteractive
 log '安装系统依赖。'
 apt-get update
@@ -39,7 +45,7 @@ command -v npm >/dev/null 2>&1 || fail 'npm 不可用。'
 
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
   log "创建系统用户 ${APP_USER}。"
-  useradd --system --home-dir "${APP_DIR}" --create-home --shell /usr/sbin/nologin "${APP_USER}"
+  useradd --system --home-dir "${APP_DIR}" --no-create-home --shell /usr/sbin/nologin "${APP_USER}"
 fi
 
 if [[ -e "${APP_DIR}/.git" ]]; then
@@ -60,16 +66,16 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
   admin_username="${ATLAS_ADMIN_USERNAME:-}"
   admin_password="${ATLAS_ADMIN_PASSWORD:-}"
   if [[ -z "${admin_username}" ]]; then
-    read -r -p '管理员用户名 [admin]: ' admin_username <"${TTY}"
+    read -r -p '后台管理员用户名 [admin]: ' admin_username <"${TTY}"
     admin_username="${admin_username:-admin}"
   fi
   if [[ -z "${admin_password}" ]]; then
-    while true; do
-      read -r -s -p '管理员密码（至少 10 个字符）: ' admin_password <"${TTY}"
-      printf '\n' >"${TTY}"
-      [[ "${#admin_password}" -ge 10 ]] && break
-      printf '密码至少需要 10 个字符。\n' >"${TTY}"
-    done
+    read -r -s -p '后台管理员密码 [123456]: ' admin_password <"${TTY}"
+    printf '\n' >"${TTY}"
+    admin_password="${admin_password:-123456}"
+  fi
+  if [[ "${#admin_password}" -lt 10 ]]; then
+    printf '警告：当前密码少于 10 个字符，仅适合首次初始化，请登录后台后立即修改。\n' >"${TTY}"
   fi
   session_secret="$(node -e "process.stdout.write(require('node:crypto').randomBytes(48).toString('base64url'))")"
   umask 077
