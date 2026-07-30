@@ -70,6 +70,12 @@ npm run dev
 
 密码 `123456` 仅作为首次安装默认值，安全性很低。首次登录后台后，请立即使用“维护工具”修改为至少 10 个字符的强密码。已有 `.env` 时，脚本会保留原配置，不会用这些默认值覆盖现有账号。
 
+安装器会检查 `package-lock.json` 的哈希和 `node_modules` 状态；依赖未安装或锁文件更新时才执行 `npm ci`，重复执行会跳过无变化的依赖安装。需要强制重装依赖时可使用 `ATLAS_FORCE_NPM_CI=1`。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/install.sh | sudo env ATLAS_FORCE_NPM_CI=1 bash
+```
+
 首次启动向导还会要求初始化令牌。令牌只显示在服务端启动日志中，不会显示在网页中；请在同一台服务器上查看 `journalctl -u atlas-nav` 或启动终端后粘贴。不要把令牌发给其他人。
 
 官方链接（推荐）：

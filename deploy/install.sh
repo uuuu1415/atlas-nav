@@ -9,6 +9,7 @@ SERVICE_NAME="atlas-nav"
 
 log() { printf '[atlas-nav] %s\n' "$*"; }
 fail() { printf '[atlas-nav] ERROR: %s\n' "$*" >&2; exit 1; }
+dependency_stamp() { sha256sum "${APP_DIR}/package-lock.json" | awk '{print $1}'; }
 
 [[ "${EUID}" -eq 0 ]] || fail '请使用 sudo 或 root 运行此脚本。'
 [[ -r /etc/os-release ]] || fail '无法识别操作系统。'
@@ -119,8 +120,19 @@ fi
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 chmod 600 "${APP_DIR}/.env"
 
-log '安装 Node.js 依赖。'
-runuser -u "${APP_USER}" -- env HOME="${APP_DIR}" npm --prefix "${APP_DIR}" ci --omit=dev
+stamp_file="${APP_DIR}/node_modules/.atlas-nav-lock.sha256"
+current_stamp="$(dependency_stamp)"
+installed_stamp=""
+[[ -f "${stamp_file}" ]] && installed_stamp="$(<"${stamp_file}")"
+
+if [[ "${ATLAS_FORCE_NPM_CI:-0}" == '1' || ! -d "${APP_DIR}/node_modules" || "${current_stamp}" != "${installed_stamp}" ]]; then
+  log '安装或更新 Node.js 依赖。'
+  runuser -u "${APP_USER}" -- env HOME="${APP_DIR}" npm --prefix "${APP_DIR}" ci --omit=dev
+  printf '%s\n' "${current_stamp}" >"${stamp_file}"
+  chown "${APP_USER}:${APP_USER}" "${stamp_file}"
+else
+  log 'Node.js 依赖已与 package-lock.json 一致，跳过 npm ci。'
+fi
 
 log '写入 systemd 服务。'
 cat >"/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
