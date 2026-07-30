@@ -59,11 +59,12 @@ npm run dev
 
 ### 一键部署
 
-下面的命令会安装 Node.js 24、询问安装位置、后台管理员用户名和密码，创建专用系统用户，克隆或 fast-forward 更新仓库，安装依赖并配置 systemd。执行过程中会隐藏管理员密码输入；已有 `.env`、`data/` 和 `storage/` 不会被覆盖。
+下面的命令会安装 Node.js 24、询问安装位置、服务端口、后台管理员用户名和密码，创建专用系统用户，克隆或 fast-forward 更新仓库，安装依赖并配置 systemd。执行过程中会隐藏管理员密码输入；已有 `.env`、`data/` 和 `storage/` 不会被覆盖。
 
 交互式默认值：
 
 - 安装位置：`/opt/atlas-nav`
+- 服务端口：`3000`
 - 后台管理员用户名：`admin`
 - 后台管理员密码：`123456`
 
@@ -91,6 +92,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/uuuu1415/atlas-nav@main/deploy/install.sh
 curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/install.sh | sudo env \
   ATLAS_APP_DIR=/opt/atlas-nav \
   ATLAS_USER=atlasnav \
+  ATLAS_PORT=3000 \
   ATLAS_ADMIN_USERNAME=admin \
   bash
 ```

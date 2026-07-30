@@ -4,6 +4,7 @@ set -Eeuo pipefail
 REPO_URL="${ATLAS_REPO_URL:-https://github.com/uuuu1415/atlas-nav.git}"
 APP_DIR="${ATLAS_APP_DIR:-/opt/atlas-nav}"
 APP_USER="${ATLAS_USER:-atlasnav}"
+APP_PORT="${ATLAS_PORT:-3000}"
 SERVICE_NAME="atlas-nav"
 
 log() { printf '[atlas-nav] %s\n' "$*"; }
@@ -27,6 +28,16 @@ if [[ -z "${ATLAS_APP_DIR+x}" ]]; then
   APP_DIR="${requested_app_dir:-${APP_DIR}}"
 fi
 [[ "${APP_DIR}" == /* ]] || fail '安装位置必须是绝对路径，例如 /opt/atlas-nav。'
+
+if [[ -z "${ATLAS_PORT+x}" ]]; then
+  read -r -p "服务端口 [${APP_PORT}]: " requested_port <"${TTY}"
+  APP_PORT="${requested_port:-${APP_PORT}}"
+fi
+[[ "${APP_PORT}" =~ ^[0-9]+$ ]] || fail '服务端口必须是 1 到 65535 之间的数字。'
+(( APP_PORT >= 1 && APP_PORT <= 65535 )) || fail '服务端口必须是 1 到 65535 之间的数字。'
+if command -v ss >/dev/null 2>&1 && ss -ltn "sport = :${APP_PORT}" | tail -n +2 | grep -q .; then
+  fail "服务端口 ${APP_PORT} 已被占用，请选择其他端口。"
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 log '安装系统依赖。'
@@ -81,7 +92,7 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
   umask 077
   printf '%s\n' \
     'NODE_ENV=production' \
-    'PORT=3000' \
+    "PORT=${APP_PORT}" \
     'DB_PROVIDER=sqlite' \
     'SQLITE_PATH=./data/atlas-nav.db' \
     "ADMIN_USERNAME=${admin_username}" \
