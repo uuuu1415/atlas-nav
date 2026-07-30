@@ -279,7 +279,7 @@ function settingsForm() {
 
 function maintenance() {
   open(
-    '<h2>维护工具</h2><p class="hint">导出备份不包含管理员密码与上传文件。</p><div class="modal-actions"><a class="button" href="/api/admin/export">导出 JSON 备份</a><button class="button ghost" id="health">检测全部链接</button><button class="button ghost" id="import">导入 JSON 备份</button><button class="button ghost" id="password">修改密码</button></div><input id="import-file" type="file" accept="application/json" hidden>',
+    '<h2>维护工具</h2><p class="hint">导出备份不包含管理员密码与上传文件。</p><div class="modal-actions"><a class="button" href="/api/admin/export">导出 JSON 备份</a><button class="button ghost" id="health">检测全部链接</button><button class="button ghost" id="import">导入 JSON 备份</button><button class="button ghost" id="password">修改密码</button></div><div class="maintenance-update"><span id="update-status" class="hint">正在检查版本状态…</span><div class="modal-actions"><button class="button ghost" id="check-update">检查更新</button><button class="button" id="apply-update" hidden>更新</button></div></div><input id="import-file" type="file" accept="application/json" hidden>',
   );
   $('#health').onclick = async () => {
     try {
@@ -307,6 +307,49 @@ function maintenance() {
     }
   };
   $('#password').onclick = passwordForm;
+
+  const updateStatus = $('#update-status');
+  const updateButton = $('#apply-update');
+  const checkUpdate = async () => {
+    updateStatus.textContent = '正在检查版本状态…';
+    updateButton.hidden = true;
+    try {
+      const status = await api('/api/admin/update-status');
+      if (!status.enabled) {
+        updateStatus.textContent = '当前部署未启用网页更新。';
+        return;
+      }
+      if (!status.clean) {
+        updateStatus.textContent = '服务器有本地修改，已禁用自动更新。';
+        return;
+      }
+      if (!status.available) {
+        updateStatus.textContent = '当前已是最新版本。';
+        return;
+      }
+      updateStatus.textContent = '发现远端更新，可以立即安装。';
+      updateButton.hidden = false;
+    } catch (error) {
+      updateStatus.textContent = error.message;
+    }
+  };
+
+  $('#check-update').onclick = checkUpdate;
+  updateButton.onclick = async () => {
+    if (!confirm('更新会安装新依赖并重启服务，确定继续吗？')) return;
+    updateButton.disabled = true;
+    updateStatus.textContent = '正在更新，服务即将重启…';
+    try {
+      const result = await api('/api/admin/update', { method: 'POST', body: '{}' });
+      updateStatus.textContent = result.updated
+        ? '更新完成，服务正在重启。'
+        : '当前已是最新版本。';
+    } catch (error) {
+      updateButton.disabled = false;
+      updateStatus.textContent = error.message;
+    }
+  };
+  checkUpdate();
 }
 function passwordForm() {
   open(

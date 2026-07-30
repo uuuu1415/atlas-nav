@@ -80,6 +80,12 @@ test(
         ).status,
         200,
       );
+      const status = await (
+        await fetch(`${base}/api/admin/update-status`, {
+          headers: { Cookie: cookie.split(';')[0] },
+        })
+      ).json();
+      assert.deepEqual(status, { enabled: false, available: false });
       const data = await (await fetch(`${base}/api/admin/data`, { headers })).json();
       assert.equal(
         data.categories.find((category) => Number(category.id) === Number(created.id))
@@ -175,6 +181,64 @@ test(
         true,
       );
       assert.equal((await fetch(`${base}/api/nav`)).status, 200);
+    } finally {
+      server.kill();
+      await new Promise((resolve) => server.once('exit', resolve)).catch(() => {});
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'production HTTP login keeps a usable non-Secure session cookie',
+  { timeout: 30000 },
+  async () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'atlas-nav-production-http-'),
+    );
+    const port = 4100 + crypto.randomInt(300);
+    const password = crypto.randomBytes(18).toString('hex');
+    const databasePath = path.join(directory, 'test.db');
+    fs.closeSync(fs.openSync(databasePath, 'w'));
+    const server = spawn(process.execPath, ['server.js'], {
+      env: {
+        ...process.env,
+        PORT: String(port),
+        NODE_ENV: 'production',
+        DB_PROVIDER: 'sqlite',
+        SQLITE_PATH: databasePath,
+        STORAGE_PATH: path.join(directory, 'storage'),
+        ADMIN_USERNAME: 'production-admin',
+        ADMIN_PASSWORD: password,
+        SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    try {
+      const base = `http://127.0.0.1:${port}`;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        try {
+          if ((await fetch(base)).ok) break;
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      const login = await fetch(`${base}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'production-admin', password }),
+      });
+      assert.equal(login.status, 200);
+      const cookie = login.headers.get('set-cookie');
+      assert.match(cookie, /HttpOnly/);
+      assert.doesNotMatch(cookie, /(?:^|;)\s*Secure(?:;|$)/);
+      assert.equal(
+        (
+          await fetch(`${base}/api/admin/data`, {
+            headers: { Cookie: cookie.split(';')[0] },
+          })
+        ).status,
+        200,
+      );
     } finally {
       server.kill();
       await new Promise((resolve) => server.once('exit', resolve)).catch(() => {});

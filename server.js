@@ -4,6 +4,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
@@ -17,6 +19,7 @@ import {
 } from './lib/setup-config.js';
 
 const app = express();
+const execFileAsync = promisify(execFile);
 let repo = null;
 let databaseReady = false;
 let setupState = 'unconfigured';
@@ -32,6 +35,8 @@ try {
 }
 const root = process.cwd();
 const port = Number(process.env.PORT || 3000);
+const webUpdatesEnabled = process.env.ATLAS_ALLOW_WEB_UPDATE === '1';
+if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
 const storageDir = path.resolve(root, process.env.STORAGE_PATH || './storage');
 fs.mkdirSync(storageDir, { recursive: true });
 
@@ -168,6 +173,31 @@ function requireAdmin(req, res, next) {
   if (!username) return res.status(401).json({ error: '请先登录后台。' });
   req.admin = username;
   next();
+}
+function secureCookie(req) {
+  return req.secure;
+}
+async function command(command, args) {
+  return execFileAsync(command, args, {
+    cwd: root,
+    timeout: 120000,
+    windowsHide: true,
+  });
+}
+async function updateStatus(fetchRemote = true) {
+  if (!webUpdatesEnabled || !fs.existsSync(path.join(root, '.git'))) {
+    return { enabled: false, available: false };
+  }
+  if (fetchRemote) await command('git', ['fetch', '--quiet', 'origin', 'main']);
+  const [{ stdout: count }, { stdout: status }] = await Promise.all([
+    command('git', ['rev-list', '--count', 'HEAD..origin/main']),
+    command('git', ['status', '--porcelain']),
+  ]);
+  return {
+    enabled: true,
+    available: Number(count.trim()) > 0,
+    clean: status.trim() === '',
+  };
 }
 function cleanText(value, max = 180) {
   return String(value ?? '')
@@ -490,7 +520,7 @@ app.post(
     res.cookie('atlas_session', makeSession(username, sessionDays), {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: secureCookie(req),
       maxAge: 1000 * 60 * 60 * 24 * sessionDays,
     });
     res.json({ ok: true });
@@ -500,6 +530,38 @@ app.post('/api/admin/logout', (_, res) => {
   res.clearCookie('atlas_session');
   res.json({ ok: true });
 });
+app.get(
+  '/api/admin/update-status',
+  requireAdmin,
+  asyncRoute(async (_, res) => {
+    try {
+      res.json(await updateStatus());
+    } catch {
+      res.status(502).json({ error: '无法检查远端更新，请检查服务器 Git 连接。' });
+    }
+  }),
+);
+app.post(
+  '/api/admin/update',
+  requireAdmin,
+  asyncRoute(async (_, res) => {
+    const status = await updateStatus();
+    if (!status.enabled)
+      return res.status(403).json({ error: '当前部署未启用网页更新。' });
+    if (!status.clean)
+      return res
+        .status(409)
+        .json({ error: '服务器工作区有未提交修改，已拒绝自动更新。' });
+    if (!status.available) return res.json({ ok: true, updated: false });
+    await command('git', ['pull', '--ff-only', 'origin', 'main']);
+    await command(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
+      'ci',
+      '--omit=dev',
+    ]);
+    res.json({ ok: true, updated: true, restartRequired: true });
+    setTimeout(() => process.exit(0), 500).unref();
+  }),
+);
 app.get(
   '/api/admin/data',
   requireAdmin,

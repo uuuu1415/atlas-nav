@@ -78,6 +78,8 @@ curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/inst
 
 首次启动向导会要求初始化令牌。安装器完成时会直接打印该令牌；如需再次查看，可在服务器私有 `.env` 中找到 `ATLAS_SETUP_TOKEN`。不要把令牌发给其他人。
 
+安装器默认设置 `ATLAS_ALLOW_WEB_UPDATE=1` 和 `TRUST_PROXY=loopback`。登录 Cookie 会在首次 HTTP 初始化时正常工作，部署 Nginx HTTPS 后则自动标记为 `Secure`；只有本机 Nginx 反代可传递受信任的 HTTPS 状态。后台“维护工具”中的“检查更新”和“更新”只会在此开关启用、服务器工作区干净且远端 `main` 有新提交时工作；更新会运行 `git pull --ff-only`、`npm ci --omit=dev`，随后由 systemd 自动重启服务。
+
 官方链接（推荐）：
 
 ```bash

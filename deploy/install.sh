@@ -113,7 +113,9 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
     "ADMIN_USERNAME=${admin_username}" \
     "ADMIN_PASSWORD=${admin_password}" \
     "SESSION_SECRET=${session_secret}" \
-    "ATLAS_SETUP_TOKEN=${setup_token}" >"${APP_DIR}/.env"
+    "ATLAS_SETUP_TOKEN=${setup_token}" \
+    'ATLAS_ALLOW_WEB_UPDATE=1' \
+    'TRUST_PROXY=loopback' >"${APP_DIR}/.env"
   unset admin_password session_secret
 else
   log '保留已有 .env，不覆盖现有生产配置。'
