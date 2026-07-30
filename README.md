@@ -1,0 +1,177 @@
+# Atlas Nav
+
+> 一个本地优先、轻量可配置的个人导航工作台。
+
+Atlas Nav 将常用服务、个人书签和搜索入口集中在一个精致首页，并提供单管理员后台管理分类、链接、搜索引擎、页面内容和视觉令牌。默认以 SQLite 运行，不需要 Docker，适合本地使用，也可在个人服务器上以 Node.js 服务部署。
+
+## 预览
+
+发布前请将你提供的两张截图保存为以下文件；它们会直接显示在 GitHub 项目首页：
+
+```text
+docs/screenshots/home.png
+docs/screenshots/admin.png
+```
+
+| 首页 | 后台 |
+| --- | --- |
+| ![Atlas Nav 首页](docs/screenshots/home.png) | ![Atlas Nav 后台](docs/screenshots/admin.png) |
+
+## 主要功能
+
+- 分类、链接、置顶入口与最近访问记录。
+- 本站搜索、链接别名搜索，以及可在后台自由管理的外部搜索引擎。
+- 标准、紧凑、分栏三种首页排布；深浅模式与中英文切换。
+- 后台管理分类、链接、搜索引擎、站点名称、Logo URL、页脚文案与视觉令牌。
+- JSON 导入导出、链接健康检查、网站元数据抓取与管理员密码更新。
+- PWA 静态资源与最后一次导航数据缓存。
+- URL 抓取的 DNS 私网校验、重定向复检、登录失败限流及受限输入校验。
+
+## 快速开始
+
+要求 Node.js 22.5+。Windows 下可直接双击 `start.cmd` 启动；首次运行时请先复制 `.env.example` 为 `.env`，再设置 `ADMIN_PASSWORD` 与 `SESSION_SECRET`。
+
+或者手动执行：
+
+```bash
+cp .env.example .env
+# 编辑 .env，设置 ADMIN_PASSWORD 与 SESSION_SECRET
+npm install
+npm run dev
+```
+
+访问 `http://localhost:3000`，后台位于 `http://localhost:3000/admin`。
+
+默认数据使用 SQLite，文件位于 `data/atlas-nav.db`；上传图标位于 `storage/`。二者都属于私有数据，请备份且不要提交到 Git。
+
+## 配置与文档
+
+后台“站点设置”支持编辑页面文案、默认布局、语言、搜索引擎、会话天数和视觉令牌。视觉令牌只接受受控颜色和尺寸格式，避免任意 CSS 注入。
+
+更多信息：
+
+- [代码与配置说明](ARCHITECTURE.md)
+- [贡献说明](CONTRIBUTING.md)
+- [安全说明](SECURITY.md)
+
+## Ubuntu / Debian 部署
+
+以下命令假设服务器用户有 `sudo` 权限，且仓库 URL 为 `https://github.com/<OWNER>/<REPO>.git`。Atlas Nav 不需要 Docker。
+
+```bash
+sudo apt update
+sudo apt install -y curl git ca-certificates build-essential
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt install -y nodejs
+node --version
+npm --version
+
+sudo mkdir -p /opt/atlas-nav
+sudo chown $USER:$USER /opt/atlas-nav
+git clone https://github.com/<OWNER>/<REPO>.git /opt/atlas-nav
+cd /opt/atlas-nav
+cp .env.example .env
+nano .env
+npm ci
+npm start
+```
+
+`.env` 至少需要设置以下内容。请自行生成强随机密码和长随机字符串，不要直接使用示例值：
+
+```dotenv
+NODE_ENV=production
+PORT=3000
+DB_PROVIDER=sqlite
+SQLITE_PATH=./data/atlas-nav.db
+ADMIN_USERNAME=你的管理员用户名
+ADMIN_PASSWORD=强随机密码
+SESSION_SECRET=长随机字符串
+```
+
+确认 `http://服务器IP:3000` 可以访问后，创建 systemd 服务。将 `<LINUX_USER>` 替换为实际 Linux 用户：
+
+```bash
+sudo tee /etc/systemd/system/atlas-nav.service >/dev/null <<'EOF'
+[Unit]
+Description=Atlas Nav
+After=network.target
+
+[Service]
+Type=simple
+User=<LINUX_USER>
+WorkingDirectory=/opt/atlas-nav
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now atlas-nav
+sudo systemctl status atlas-nav --no-pager
+```
+
+安装 Nginx 和 Certbot：
+
+```bash
+sudo apt install -y nginx certbot python3-certbot-nginx
+```
+
+创建 `/etc/nginx/sites-available/atlas-nav`，将 `<YOUR_DOMAIN>` 替换为域名：
+
+```nginx
+server {
+    listen 80;
+    server_name <YOUR_DOMAIN>;
+
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+启用站点并签发 HTTPS 证书：
+
+```bash
+sudo ln -s /etc/nginx/sites-available/atlas-nav /etc/nginx/sites-enabled/atlas-nav
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d <YOUR_DOMAIN>
+```
+
+更新应用：
+
+```bash
+cd /opt/atlas-nav
+git pull --ff-only
+npm ci
+sudo systemctl restart atlas-nav
+```
+
+在低访问时段备份私有数据和配置：
+
+```bash
+sudo systemctl stop atlas-nav
+tar -czf atlas-nav-backup-$(date +%F).tar.gz /opt/atlas-nav/data /opt/atlas-nav/storage /opt/atlas-nav/.env
+sudo systemctl start atlas-nav
+```
+
+备份文件包含管理员配置和私人导航数据，应加密保存，不要提交到 Git 或放在网站公开目录。
+
+## 数据库支持
+
+当前完整实现为 SQLite。项目的数据访问边界为 PostgreSQL、MySQL 与 MongoDB 预留了扩展位置，但它们尚未实现为可直接切换的 provider；请不要仅修改 `DB_PROVIDER` 就在生产中使用。欢迎贡献数据库适配器。
+
+## 开源许可
+
+本项目采用 [MIT License](LICENSE)。

@@ -1,0 +1,16 @@
+node_modules/
+data/
+storage/
+.env
+.DS_Store
+npm-debug.log*
+coverage/
+*.log
+*.db
+*.db-shm
+*.db-wal
+_atlas_verify_temp*.cmd
+_atlas_verify_temp*.sh
+playwright-report/
+test-results/
+docs/screenshots/*.psd
