@@ -59,9 +59,19 @@ npm run dev
 
 下面的命令会安装 Node.js 24、创建专用系统用户、克隆或 fast-forward 更新仓库、交互式创建 `.env`、安装依赖并配置 systemd。执行过程中会隐藏管理员密码输入；已有 `.env`、`data/` 和 `storage/` 不会被覆盖。
 
+官方链接（推荐）：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/install.sh | sudo bash
 ```
+
+镜像链接（jsDelivr）：
+
+```bash
+curl -fsSL https://cdn.jsdelivr.net/gh/uuuu1415/atlas-nav@main/deploy/install.sh | sudo bash
+```
+
+上面的镜像只用于下载一键安装脚本。无论使用哪个入口，脚本默认仍通过官方地址 `https://github.com/uuuu1415/atlas-nav.git` 克隆项目；Node.js 依赖安装源仍使用官方 NodeSource 地址。生产环境优先使用官方链接，镜像可能存在缓存延迟。
 
 可选环境变量：
 
