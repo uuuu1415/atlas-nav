@@ -77,7 +77,9 @@ app.post(
     if (databaseReady || setupState !== 'unconfigured')
       return res.status(409).json({ error: '数据库正在配置或已经完成初始化。' });
     if (req.body.setupToken !== setupToken)
-      return res.status(403).json({ error: '初始化令牌无效，请查看服务器启动日志。' });
+      return res.status(403).json({
+        error: '初始化令牌无效，请查看安装器输出或服务器私有 .env。',
+      });
     setupState = 'configuring';
     let config;
     try {
@@ -107,6 +109,7 @@ app.post(
       delete persistedConfig.ADMIN_PASSWORD;
       writeSetupConfig(persistedConfig);
       delete process.env.ADMIN_PASSWORD;
+      delete process.env.ATLAS_SETUP_TOKEN;
       databaseReady = true;
       setupState = 'ready';
       setupToken = null;

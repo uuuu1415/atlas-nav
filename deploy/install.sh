@@ -103,6 +103,7 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
     printf '警告：当前密码少于 10 个字符，仅适合首次初始化，请登录后台后立即修改。\n' >"${TTY}"
   fi
   session_secret="$(node -e "process.stdout.write(require('node:crypto').randomBytes(48).toString('base64url'))")"
+  setup_token="$(node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('hex'))")"
   umask 077
   printf '%s\n' \
     'NODE_ENV=production' \
@@ -111,10 +112,17 @@ if [[ ! -f "${APP_DIR}/.env" ]]; then
     'SQLITE_PATH=./data/atlas-nav.db' \
     "ADMIN_USERNAME=${admin_username}" \
     "ADMIN_PASSWORD=${admin_password}" \
-    "SESSION_SECRET=${session_secret}" >"${APP_DIR}/.env"
+    "SESSION_SECRET=${session_secret}" \
+    "ATLAS_SETUP_TOKEN=${setup_token}" >"${APP_DIR}/.env"
   unset admin_password session_secret
 else
   log '保留已有 .env，不覆盖现有生产配置。'
+fi
+
+setup_token="$(sed -n 's/^ATLAS_SETUP_TOKEN=//p' "${APP_DIR}/.env" | tail -n 1)"
+if [[ -z "${setup_token}" ]]; then
+  setup_token="$(node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('hex'))")"
+  printf '\nATLAS_SETUP_TOKEN=%s\n' "${setup_token}" >>"${APP_DIR}/.env"
 fi
 
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
@@ -165,6 +173,10 @@ port="${port:-3000}"
 curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:${port}/" >/dev/null || { journalctl -u "${SERVICE_NAME}" -n 40 --no-pager; fail '健康检查失败。'; }
 
 log '部署完成。'
+if [[ ! -f "${APP_DIR}/.atlas-nav.config.json" ]]; then
+  printf '\n首次初始化令牌: %s\n' "${setup_token}"
+  printf '在浏览器打开初始化页面后，将此令牌粘贴到“初始化令牌”字段。\n'
+fi
 printf '首页: http://服务器IP:%s/\n' "${port}"
 printf '后台: http://服务器IP:%s/admin\n' "${port}"
 printf '状态: sudo systemctl status %s --no-pager\n' "${SERVICE_NAME}"

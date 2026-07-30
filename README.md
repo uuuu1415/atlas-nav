@@ -4,7 +4,7 @@
 
 Atlas Nav 将常用服务、个人书签和搜索入口集中在一个精致首页，并提供单管理员后台管理分类、链接、搜索引擎、页面内容和视觉令牌。默认以 SQLite 运行，不需要 Docker，适合本地使用，也可在个人服务器上以 Node.js 服务部署。
 
-首次启动时会显示与首页风格一致的数据库配置向导，可选择 SQLite、PostgreSQL、MySQL 或 MongoDB，并填写数据库地址、端口、数据库名、账号和密码。SQLite 默认路径为 `./data/atlas-nav.db`；关系数据库默认端口为 PostgreSQL `5432`、MySQL `3306`。首次初始化还需要从服务器日志复制一次性 `Atlas Nav setup token`，防止未授权用户抢先接管新实例。配置完成后，连接凭据保存在被 Git 忽略的 `.atlas-nav.config.json`，管理员密码只以哈希形式保存，初始化页面不再显示。
+首次启动时会显示与首页风格一致的数据库配置向导，可选择 SQLite、PostgreSQL、MySQL 或 MongoDB，并填写数据库地址、端口、数据库名、账号和密码。SQLite 默认路径为 `./data/atlas-nav.db`；关系数据库默认端口为 PostgreSQL `5432`、MySQL `3306`。首次初始化需要一次性 `Atlas Nav setup token`，防止未授权用户抢先接管新实例。安装器会在部署完成时直接显示令牌，并把它保存到私有 `.env`；配置完成后，连接凭据保存在被 Git 忽略的 `.atlas-nav.config.json`，管理员密码只以哈希形式保存，初始化页面不再显示。
 
 ## 制作方式
 
@@ -76,7 +76,7 @@ npm run dev
 curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/install.sh | sudo env ATLAS_FORCE_NPM_CI=1 bash
 ```
 
-首次启动向导还会要求初始化令牌。令牌只显示在服务端启动日志中，不会显示在网页中；请在同一台服务器上查看 `journalctl -u atlas-nav` 或启动终端后粘贴。不要把令牌发给其他人。
+首次启动向导会要求初始化令牌。安装器完成时会直接打印该令牌；如需再次查看，可在服务器私有 `.env` 中找到 `ATLAS_SETUP_TOKEN`。不要把令牌发给其他人。
 
 官方链接（推荐）：
 
