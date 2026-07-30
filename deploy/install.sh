@@ -67,8 +67,19 @@ elif [[ -e "${APP_DIR}" && -n "$(find "${APP_DIR}" -mindepth 1 -maxdepth 1 -prin
 else
   log "克隆 ${REPO_URL}。"
   mkdir -p "${APP_DIR}"
-  git clone --branch main --single-branch "${REPO_URL}" "${APP_DIR}"
+  git clone --filter=blob:none --sparse --branch main --single-branch "${REPO_URL}" "${APP_DIR}"
 fi
+
+# The server does not need screenshots, tests, or repository documentation.
+# Keep the deployment checkout small while retaining the Git remote for updates.
+git -C "${APP_DIR}" sparse-checkout set --no-cone \
+  /server.js \
+  /package.json \
+  /package-lock.json \
+  /.env.example \
+  /lib/ \
+  /public/ \
+  /deploy/
 
 install -d -o "${APP_USER}" -g "${APP_USER}" "${APP_DIR}/data" "${APP_DIR}/storage"
 
