@@ -56,7 +56,7 @@ npm run dev
 
 ## Ubuntu / Debian 部署
 
-以下命令假设服务器用户有 `sudo` 权限，且仓库 URL 为 `https://github.com/<OWNER>/<REPO>.git`。Atlas Nav 不需要 Docker。
+以下命令假设服务器用户有 `sudo` 权限，仓库 URL 为 `https://github.com/uuuu1415/atlas-nav.git`。Atlas Nav 不需要 Docker。
 
 ```bash
 sudo apt update
@@ -68,7 +68,7 @@ npm --version
 
 sudo mkdir -p /opt/atlas-nav
 sudo chown $USER:$USER /opt/atlas-nav
-git clone https://github.com/<OWNER>/<REPO>.git /opt/atlas-nav
+git clone https://github.com/uuuu1415/atlas-nav.git /opt/atlas-nav
 cd /opt/atlas-nav
 cp .env.example .env
 nano .env
