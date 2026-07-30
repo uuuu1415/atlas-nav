@@ -6,7 +6,7 @@ Atlas Nav 将常用服务、个人书签和搜索入口集中在一个精致首�
 
 ## 预览
 
-发布前请将你提供的两张截图保存为以下文件；它们会直接显示在 GitHub 项目首页：
+请将首页和后台截图保存为以下文件；它们会直接显示在 GitHub 项目首页：
 
 ```text
 docs/screenshots/home.png
@@ -57,6 +57,26 @@ npm run dev
 ## Ubuntu / Debian 部署
 
 以下命令假设服务器用户有 `sudo` 权限，仓库 URL 为 `https://github.com/uuuu1415/atlas-nav.git`。Atlas Nav 不需要 Docker。
+
+### 一键部署
+
+下面的命令会安装 Node.js 24、创建专用系统用户、克隆或 fast-forward 更新仓库、交互式创建 `.env`、安装依赖并配置 systemd。执行过程中会隐藏管理员密码输入；已有 `.env`、`data/` 和 `storage/` 不会被覆盖。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/install.sh | sudo bash
+```
+
+可选环境变量：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/uuuu1415/atlas-nav/main/deploy/install.sh | sudo env \
+  ATLAS_APP_DIR=/opt/atlas-nav \
+  ATLAS_USER=atlasnav \
+  ATLAS_ADMIN_USERNAME=admin \
+  bash
+```
+
+通过环境变量传入管理员密码不推荐，因为它可能出现在 shell 历史或进程环境中；默认交互式输入更安全。脚本完成后再按下面的 Nginx/HTTPS 配置公开服务。
 
 ```bash
 sudo apt update

@@ -17,4 +17,5 @@ jobs:
       - run: node --check public/admin.js
       - run: node --check public/js/home.js
       - run: node --check public/js/shared.js
+      - run: bash -n deploy/install.sh
       - run: npm test
